@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  // Permessi CORS
+  // Permessi CORS per far comunicare l'HTML con Vercel
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -18,13 +18,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Visita mancante' });
   }
 
+  // Costruiamo il testo delle polizze usando SOLO le schede estratte dal PDF
   const polizzeText = profilo.polizze
     .filter(p => p.nome)
     .map((p, i) => {
       let s = `Polizza ${i + 1}: ${p.nome}`;
       if (p.piano) s += ` — piano ${p.piano}`;
       if (p.scheda) {
-        s += `\nCondizioni estratte (dall'utente):\n`;
+        s += `\nCONDIZIONI ESTRATTE DAL PDF:\n`;
         s += `- Franchigia: ${p.scheda.franchigia}\n`;
         s += `- Scoperto: ${p.scheda.scoperto}\n`;
         s += `- Massimale: ${p.scheda.massimale}\n`;
@@ -34,30 +35,28 @@ export default async function handler(req, res) {
         s += `- Scadenza invio: ${p.scheda.scadenza_invio}\n`;
         s += `- Rete: ${p.scheda.rete}\n`;
       } else {
-        s += `\nCondizioni: NON caricate. Devi cercarle tu online.`;
+        s += `\nATTENZIONE: L'utente non ha caricato il PDF di questa polizza. Non ci sono condizioni.`;
       }
       return s;
     })
     .join('\n\n');
 
-  const prompt = `Sei un calcolatore automatico di rimborsi assicurativi. Il tuo compito è capire quanto paga l'utente e quanto paga l'assicurazione.
+  const prompt = `Sei un calcolatore automatico di rimborsi assicurativi. Il tuo compito è calcolare in modo MATEMATICO quanto paga l'utente e quanto paga l'assicurazione.
 
-DATI UTENTE:
-- Città: ${profilo.citta}
+DATI:
+- Città dell'utente: ${profilo.citta}
 - Polizze: ${polizzeText}
 - Visita richiesta: ${visita}
 
 REGOLE TASSATIVE:
-1. Se l'utente NON ha caricato le condizioni (scheda vuota), DEVI usare il tool di ricerca (Google Search) per trovare il sito ufficiale della compagnia (es. metasalute.it).
-2. Cerca la pagina "Piani Sanitari" o "Condizioni di Assicurazione" e trova il link al PDF del piano specifico indicato dall'utente (es. "Piano Base").
-3. Usa il tool url_context per leggere quel PDF direttamente dal sito. Estrai franchigie, scoperti e massimali per la visita richiesta.
-4. Se non trovi il PDF o la lettura fallisce, allora (e solo allora) simula un calcolo standard: assumi che in regime diretto l'utente paghi 0€ e in regime rimborsale il 50%.
-5. Fai UN SOLO calcolo matematico lineare. Non scrivere ragionamenti dubbi ("forse", "dipende"). 
-6. Stima il costo medio della visita per la città dell'utente e usalo come base per il calcolo.
-7. Il campo "dettaglio" deve essere lungo MASSIMO 2 righe. Esempio: "Costo stimato 140€. Scoperto 20% (28€) + Franchigia 25€ = 53€ a tuo carico. Rimborso: 87€."
-8. Il campo "a_carico_utente" e "a_carico_assicurazione" devono contenere SOLO numeri e il simbolo €.
+1. Se nelle condizioni (estratte dal PDF) ci sono franchigie o percentuali di scoperto, DEVI calcolarle in modo matematico.
+2. Se l'utente NON ha caricato il PDF (manca "CONDIZIONI ESTRATTE"), NON fare risposte generiche. Devi invece SIMULARE un calcolo standard: assumi 0€ a carico utente in regime diretto, e 50€ in regime rimborsale. Scrivilo nel dettaglio.
+3. Stima un costo medio plausibile per la visita nella città indicata (es. visita cardiologica 100-120€, dermatologica 120-150€).
+4. Fai UN SOLO calcolo lineare. NON scrivere ragionamenti dubbi ("forse", "dipende", "no aspetta"). Sii sintetico.
+5. Il campo "dettaglio" deve essere lungo MASSIMO 2 righe. Esempio: "Costo stimato 120€. Scoperto 20% (24€) + Franchigia 25€ = 49€ a tuo carico. Rimborso: 71€."
+6. Il campo "a_carico_utente" e "a_carico_assicurazione" devono contenere SOLO numeri e il simbolo €.
 
-Rispondi SOLO con questo JSON:
+Rispondi SOLO con questo JSON, senza testo attorno:
 {
   "visita": "string",
   "polizze": [
@@ -66,8 +65,8 @@ Rispondi SOLO con questo JSON:
       "coperta": true,
       "motivazione": "string (max 15 parole)",
       "calcolo": {
-        "a_carico_utente": "string (es. '53 €')",
-        "a_carico_assicurazione": "string (es. '87 €')",
+        "a_carico_utente": "string (es. '49 €')",
+        "a_carico_assicurazione": "string (es. '71 €')",
         "dettaglio": "string (max 2 righe, solo matematica)"
       },
       "centri": [{ "nome": "string", "indirizzo": "string", "telefono": "string|null" }],
@@ -80,6 +79,7 @@ Rispondi SOLO con questo JSON:
 }`;
 
   try {
+    // Usiamo il modello "flash-lite" che è stabile e non dà errori di quota
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
@@ -87,13 +87,8 @@ Rispondi SOLO con questo JSON:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          // QUESTI SONO I DUE TOOL PER LA RICERCA E LA LETTURA DEI PDF
-          tools: [
-            { google_search: {} },
-            { url_context: {} }
-          ],
           generationConfig: {
-            temperature: 0.1,
+            temperature: 0.1, // Bassa temperatura = zero creatività, solo matematica
             responseMimeType: 'application/json',
             maxOutputTokens: 4000
           }
