@@ -1,10 +1,9 @@
 export default async function handler(req, res) {
-  // Permessi CORS per far comunicare l'HTML con Vercel
+  // Permessi CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   
-  // Rispondi subito alle richieste di "preflight" del browser
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -35,28 +34,25 @@ export default async function handler(req, res) {
         s += `- Scadenza invio: ${p.scheda.scadenza_invio}\n`;
         s += `- Rete: ${p.scheda.rete}\n`;
       } else {
-        s += `\nCondizioni: NON caricate. Cerca online sul sito ufficiale di ${p.nome}. Se non trovi, metti in "Da verificare".`;
+        s += `\nCondizioni: NON caricate. L'utente non ha caricato il PDF.`;
       }
       return s;
     })
     .join('\n\n');
 
-  const prompt = `Sei un assistente esperto in polizze sanitarie integrative italiane. Aiuta l'utente a capire, PRIMA di prenotare, quanto paga lui e quanto paga l'assicurazione per una visita, e quali centri convenzionati può contattare.
+  const prompt = `Sei un calcolatore automatico di rimborsi assicurativi. Il tuo compito è calcolare in modo MATEMATICO quanto paga l'utente e quanto paga l'assicurazione.
 
-PROFILO:
+DATI:
 - Città: ${profilo.citta}
+- Polizze: ${polizzeText}
+- Visita richiesta: ${visita}
 
-POLIZZE:
-${polizzeText}
-
-VISITA RICHIESTA: ${visita}
-
-REGOLE:
-1. Calcola separatamente regime diretto (struttura convenzionata) e regime rimborsale (fuori rete).
-2. Fai un esempio numerico su un costo ipotetico di 100 €.
-3. Cerca i centri convenzionati di ogni polizza nella città indicata. Proponi 3-5 centri con nome, indirizzo e telefono.
-4. Se un dato non è nelle condizioni, NON inventarlo: mettilo in "Da verificare".
-5. Se ci sono due polizze, produci un blocco per ciascuna e un blocco "Confronto" che dica quale conviene e se si combinano.
+REGOLE FONDAMENTALI:
+1. Se nelle condizioni della polizza ci sono franchigie o percentuali, DEVI calcolarle.
+2. Se NON ci sono le condizioni (perché l'utente non ha caricato il PDF), NON fare risposte generiche. Devi invece SIMULARE un calcolo standard: assumi che in regime diretto l'utente paghi 0€ e l'assicurazione 100€, e in regime rimborsale l'utente paghi 50€ e l'assicurazione 50€.
+3. Il campo "a_carico_utente" deve contenere SOLO un numero e il simbolo dell'euro (es. "0 €" o "60 €").
+4. Il campo "a_carico_assicurazione" deve contenere SOLO un numero e il simbolo dell'euro (es. "100 €" o "40 €").
+5. Nel campo "dettaglio", scrivi la matematica passo-passo (es. "Costo 100€ - 20€ di scoperto = 80€ rimborsati").
 
 Rispondi SOLO con questo JSON, senza testo attorno:
 {
@@ -64,32 +60,32 @@ Rispondi SOLO con questo JSON, senza testo attorno:
   "polizze": [
     {
       "nome": "string",
-      "coperta": true | false | "parziale" | null,
+      "coperta": true,
       "motivazione": "string",
       "calcolo": {
-        "a_carico_utente": "string",
-        "a_carico_assicurazione": "string",
-        "dettaglio": "string"
+        "a_carico_utente": "string (solo numero, es. '60 €')",
+        "a_carico_assicurazione": "string (solo numero, es. '40 €')",
+        "dettaglio": "string (spiegazione matematica)"
       },
       "centri": [{ "nome": "string", "indirizzo": "string", "telefono": "string|null" }],
       "come_prenotare": ["string"],
       "da_verificare": ["string"]
     }
   ],
-  "confronto": { "conviene": "string", "combinabili": true|false|null, "note": "string|null" } | null,
+  "confronto": null,
   "da_verificare_globali": ["string"]
 }`;
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: 0.2,
+            temperature: 0.1,
             responseMimeType: 'application/json',
             maxOutputTokens: 4000
           }
