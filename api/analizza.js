@@ -1,11 +1,14 @@
 export default async function handler(req, res) {
-    // Permessi CORS per far comunicare l'HTML con Vercel
+  // Permessi CORS per far comunicare l'HTML con Vercel
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-// Rispondi subito alle richieste di "preflight" del browser
+  
+  // Rispondi subito alle richieste di "preflight" del browser
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Metodo non consentito' });
   }
