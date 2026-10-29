@@ -1,72 +1,50 @@
 export default async function handler(req, res) {
-  // Permessi CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Metodo non consentito' });
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non consentito' });
 
   const { profilo, visita } = req.body;
+  if (!visita) return res.status(400).json({ error: 'Visita mancante' });
 
-  if (!visita) {
-    return res.status(400).json({ error: 'Visita mancante' });
-  }
+  let polizzeText = "";
+  profilo.polizze.filter(p => p.nome).forEach((p, i) => {
+    polizzeText += `Polizza ${i + 1}: ${p.nome} — piano ${p.piano}\n`;
+    if (p.testoPdf) {
+      // Prendiamo i primi 15.000 caratteri del PDF per non sforare i limiti
+      polizzeText += `TESTO ESTRATTO DAL PDF:\n${p.testoPdf.substring(0, 15000)}\n`;
+    } else {
+      polizzeText += `ATTENZIONE: Nessun PDF caricato.\n`;
+    }
+  });
 
-  const polizzeText = profilo.polizze
-    .filter(p => p.nome)
-    .map((p, i) => {
-      let s = `Polizza ${i + 1}: ${p.nome}`;
-      if (p.piano) s += ` — piano ${p.piano}`;
-      if (p.scheda) {
-        s += `\nCondizioni estratte:\n`;
-        s += `- Franchigia: ${p.scheda.franchigia}\n`;
-        s += `- Scoperto: ${p.scheda.scoperto}\n`;
-        s += `- Massimale: ${p.scheda.massimale}\n`;
-        s += `- Carenza: ${p.scheda.carenza}\n`;
-        s += `- Esclusioni: ${p.scheda.esclusioni.join(', ')}\n`;
-        s += `- Documenti: ${p.scheda.documenti.join(', ')}\n`;
-        s += `- Scadenza invio: ${p.scheda.scadenza_invio}\n`;
-        s += `- Rete: ${p.scheda.rete}\n`;
-      } else {
-        s += `\nCondizioni: NON caricate. L'utente non ha caricato il PDF.`;
-      }
-      return s;
-    })
-    .join('\n\n');
+  const prompt = `Sei un calcolatore assicurativo. L'utente deve fare: "${visita}".
 
-  const prompt = `Sei un calcolatore automatico di rimborsi assicurativi. Il tuo compito è calcolare in modo MATEMATICO quanto paga l'utente e quanto paga l'assicurazione.
-
-DATI:
-- Città dell'utente: ${profilo.citta}
-- Polizze: ${polizzeText}
-- Visita richiesta: ${visita}
+Ecco le condizioni della sua polizza:
+${polizzeText}
 
 REGOLE TASSATIVE:
-1. Se nelle condizioni della polizza ci sono franchigie o percentuali di scoperto, DEVI calcolarle in modo matematico.
-2. Se l'utente NON ha caricato il PDF (manca "Condizioni estratte"), NON fare risposte generiche. Devi invece SIMULARE un calcolo standard: assumi 0€ a carico utente in regime diretto, e 50€ in regime rimborsale. Scrivilo nel dettaglio.
-3. Stima un costo medio plausibile per la visita nella città indicata (es. visita cardiologica 100-120€, dermatologica 120-150€).
-4. Fai UN SOLO calcolo lineare. NON scrivere ragionamenti dubbi ("forse", "dipende", "no aspetta"). Sii sintetico.
-5. Il campo "dettaglio" deve essere lungo MASSIMO 2 righe. Esempio: "Costo stimato 120€. Scoperto 20% (24€) + Franchigia 25€ = 49€ a tuo carico. Rimborso: 71€."
-6. Il campo "a_carico_utente" e "a_carico_assicurazione" devono contenere SOLO numeri e il simbolo €.
+1. Leggi ATTENTAMENTE il testo del PDF. Cerca la sezione "Visite specialistiche".
+2. Stima un costo medio per la prestazione a ${profilo.citta} (es. ginecologa 120€).
+3. Trova lo scoperto o la franchigia ESATTA scritta nel PDF (es. "Scoperto 30%"). Non inventare numeri che non ci sono.
+4. Calcola matematicamente: Costo - Scoperto = Rimborso.
+5. Se il PDF dice "rimborso max 55€ per visita", applica quel limite massimo.
+6. Sii sintetico nel dettaglio (max 2 righe). Non scrivere "forse" o "dipende".
 
-Rispondi SOLO con questo JSON, senza testo attorno:
+Rispondi SOLO con questo JSON:
 {
   "visita": "string",
   "polizze": [
     {
       "nome": "string",
-      "coperta": true | false,
-      "motivazione": "string (max 15 parole)",
+      "coperta": true,
+      "motivazione": "string (cita la clausola del PDF)",
       "calcolo": {
-        "a_carico_utente": "string (es. '49 €')",
-        "a_carico_assicurazione": "string (es. '71 €')",
-        "dettaglio": "string (max 2 righe, solo matematica)"
+        "a_carico_utente": "string (es. '36 €')",
+        "a_carico_assicurazione": "string (es. '84 €')",
+        "dettaglio": "string (es. 'Costo 120€. Scoperto 30% = 36€ a tuo carico. Rimborso 84€.')"
       },
       "centri": [{ "nome": "string", "indirizzo": "string", "telefono": "string|null" }],
       "come_prenotare": ["string"],
@@ -85,32 +63,18 @@ Rispondi SOLO con questo JSON, senza testo attorno:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: 'application/json',
-            maxOutputTokens: 4000
-          }
+          generationConfig: { temperature: 0.1, responseMimeType: 'application/json', maxOutputTokens: 4000 }
         })
       }
     );
 
-    if (!response.ok) {
-      const err = await response.text();
-      console.error('Gemini error:', err);
-      return res.status(500).json({ error: 'Errore nella chiamata AI' });
-    }
+    if (!response.ok) return res.status(500).json({ error: 'Errore AI' });
 
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!text) {
-      return res.status(500).json({ error: 'Risposta AI vuota' });
-    }
-
-    const risultato = JSON.parse(text);
-    res.status(200).json(risultato);
+    let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    res.status(200).json(JSON.parse(text));
   } catch (e) {
-    console.error('Errore:', e);
     res.status(500).json({ error: 'Errore interno' });
   }
 }
