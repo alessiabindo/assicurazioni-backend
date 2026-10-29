@@ -15,33 +15,30 @@ export default async function handler(req, res) {
       let s = `Polizza ${i + 1}: ${p.nome}`;
       if (p.piano) s += ` — piano ${p.piano}`;
       if (p.scheda) {
-        s += `\nCONDIZIONI:\n- Franchigia: ${p.scheda.franchigia}\n- Scoperto: ${p.scheda.scoperto}\n- Esclusioni: ${p.scheda.esclusioni.join(', ')}\n`;
+        s += `\nCONDIZIONI ESTRATTE:\n- Franchigia: ${p.scheda.franchigia}\n- Scoperto: ${p.scheda.scoperto}\n- Massimale: ${p.scheda.massimale}\n- Esclusioni: ${p.scheda.esclusioni.join(', ')}\n`;
       }
       return s;
     }).join('\n\n');
 
-  const prompt = `Sei un assistente assicurativo. L'utente chiede: "${visita}".
+  const prompt = `Sei un calcolatore assicurativo. L'utente deve fare: "${visita}".
 
 Polizze:
 ${polizzeText}
 
-REGOLE:
-1. Se l'utente chiede PIÙ COSE, separale in schede distinte.
-2. Se è esclusa (es. medicina estetica), scrivi "coperta": false e "a_carico_utente": "Tutto".
-3. Se è coperta, stima un costo medio per la città e calcola: Costo - (Scoperto o Minimo) - Franchigia.
-4. NON sommare cose diverse. Sii sintetico.
+REGOLE TASSATIVE:
+1. Stima un costo medio per questa prestazione nella città dell'utente (es. visita cardiologica 100-120€).
+2. Calcola quanto paga l'utente e quanto l'assicurazione. Se c'è uno scoperto (es. 20%) o una franchigia (es. 25€), applicali.
+3. Se la prestazione è esclusa (es. medicina estetica), scrivi "coperta": false e "a_carico_utente": "Tutto".
+4. NON sommare cose diverse. Se l'utente chiede due cose, calcola solo la prima.
+5. Sii sintetico. Il campo "dettaglio" deve essere max 2 righe.
 
-Rispondi SOLO con questo JSON (senza markdown, senza ```):
+Rispondi SOLO con questo JSON:
 {
-  "prestazioni": [
-    {
-      "nome": "string",
-      "coperta": true | false,
-      "a_carico_utente": "string",
-      "a_carico_assicurazione": "string",
-      "dettaglio": "string"
-    }
-  ]
+  "nome": "string",
+  "coperta": true | false,
+  "a_carico_utente": "string (es. '45 €')",
+  "a_carico_assicurazione": "string (es. '55 €')",
+  "dettaglio": "string (es. 'Costo 100€ - 20€ scoperto - 25€ franchigia = 55€ rimborso')"
 }`;
 
   try {
@@ -63,18 +60,12 @@ Rispondi SOLO con questo JSON (senza markdown, senza ```):
 
     if (!response.ok) {
       const err = await response.text();
-      console.error('Gemini error:', err);
       return res.status(500).json({ error: 'Errore AI' });
     }
 
     const data = await response.json();
     let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    // Pulizia di sicurezza: rimuove eventuali ```json all'inizio o alla fine
     text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-
-    if (!text) return res.status(500).json({ error: 'Risposta vuota' });
-
     const risultato = JSON.parse(text);
     res.status(200).json(risultato);
   } catch (e) {
