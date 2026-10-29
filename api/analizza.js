@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // Permessi CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -43,16 +42,17 @@ export default async function handler(req, res) {
   const prompt = `Sei un calcolatore automatico di rimborsi assicurativi. Il tuo compito è calcolare in modo MATEMATICO quanto paga l'utente e quanto paga l'assicurazione.
 
 DATI:
-- Città: ${profilo.citta}
+- Città dell'utente: ${profilo.citta}
 - Polizze: ${polizzeText}
 - Visita richiesta: ${visita}
 
 REGOLE FONDAMENTALI:
 1. Se nelle condizioni della polizza ci sono franchigie o percentuali, DEVI calcolarle.
-2. Se NON ci sono le condizioni (perché l'utente non ha caricato il PDF), NON fare risposte generiche. Devi invece SIMULARE un calcolo standard: assumi che in regime diretto l'utente paghi 0€ e l'assicurazione 100€, e in regime rimborsale l'utente paghi 50€ e l'assicurazione 50€.
-3. Il campo "a_carico_utente" deve contenere SOLO un numero e il simbolo dell'euro (es. "0 €" o "60 €").
-4. Il campo "a_carico_assicurazione" deve contenere SOLO un numero e il simbolo dell'euro (es. "100 €" o "40 €").
-5. Nel campo "dettaglio", scrivi la matematica passo-passo (es. "Costo 100€ - 20€ di scoperto = 80€ rimborsati").
+2. Se NON ci sono le condizioni (perché l'utente non ha caricato il PDF), NON fare risposte generiche. Devi invece SIMULARE un calcolo standard: assumi che in regime diretto l'utente paghi 0€ e l'assicurazione il costo stimato, e in regime rimborsale l'utente paghi il 50% del costo stimato e l'assicurazione l'altro 50%.
+3. **COSTO MEDIO DELLA PRESTAZIONE**: invece di usare un costo fisso di 100€, DEVI cercare il costo medio reale della visita richiesta nella città dell'utente. Se non riesci a trovare un dato preciso, usa una stima plausibile basata sui prezzi tipici italiani (es. visita cardiologica 80-120€, dermatologica 100-150€, oculistica 80-120€). Nel dettaglio, scrivi: "Costo medio stimato per [visita] a [città]: [importo]€".
+4. Il campo "a_carico_utente" deve contenere SOLO un numero e il simbolo dell'euro (es. "0 €" o "60 €").
+5. Il campo "a_carico_assicurazione" deve contenere SOLO un numero e il simbolo dell'euro (es. "100 €" o "40 €").
+6. Nel campo "dettaglio", scrivi la matematica passo-passo (es. "Costo stimato 90€ - 20€ di scoperto = 70€ rimborsati").
 
 Rispondi SOLO con questo JSON, senza testo attorno:
 {
@@ -65,7 +65,7 @@ Rispondi SOLO con questo JSON, senza testo attorno:
       "calcolo": {
         "a_carico_utente": "string (solo numero, es. '60 €')",
         "a_carico_assicurazione": "string (solo numero, es. '40 €')",
-        "dettaglio": "string (spiegazione matematica)"
+        "dettaglio": "string (spiegazione matematica con costo stimato)"
       },
       "centri": [{ "nome": "string", "indirizzo": "string", "telefono": "string|null" }],
       "come_prenotare": ["string"],
