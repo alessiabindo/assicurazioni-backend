@@ -3,19 +3,11 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Metodo non consentito' });
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non consentito' });
 
   const { profilo, visita } = req.body;
-
-  if (!visita) {
-    return res.status(400).json({ error: 'Visita mancante' });
-  }
+  if (!visita) return res.status(400).json({ error: 'Visita mancante' });
 
   const polizzeText = profilo.polizze
     .filter(p => p.nome)
@@ -23,38 +15,31 @@ export default async function handler(req, res) {
       let s = `Polizza ${i + 1}: ${p.nome}`;
       if (p.piano) s += ` — piano ${p.piano}`;
       if (p.scheda) {
-        s += `\nCONDIZIONI ESTRATTE:\n`;
-        s += `- Franchigia: ${p.scheda.franchigia}\n`;
-        s += `- Scoperto: ${p.scheda.scoperto}\n`;
-        s += `- Massimale: ${p.scheda.massimale}\n`;
-        s += `- Esclusioni: ${p.scheda.esclusioni.join(', ')}\n`;
-      } else {
-        s += `\nCondizioni: NON caricate.`;
+        s += `\nCONDIZIONI:\n- Franchigia: ${p.scheda.franchigia}\n- Scoperto: ${p.scheda.scoperto}\n- Esclusioni: ${p.scheda.esclusioni.join(', ')}\n`;
       }
       return s;
-    })
-    .join('\n\n');
+    }).join('\n\n');
 
-  const prompt = `Sei un assistente assicurativo. L'utente ti ha chiesto: "${visita}"
+  const prompt = `Sei un assistente assicurativo. L'utente chiede: "${visita}".
 
-Le sue polizze:
+Polizze:
 ${polizzeText}
 
-REGOLE FONDAMENTALI:
-1. Se l'utente chiede PIÙ COSE diverse (es. una visita + una medicina estetica), DEVI separarle in due schede distinte dentro l'array "prestazioni".
-2. Per ogni prestazione, controlla le esclusioni. Se la prestazione è esclusa (es. medicina estetica), scrivi "coperta": false, "a_carico_utente": "100% del costo", "a_carico_assicurazione": "0 €".
-3. Se la prestazione è coperta, calcola: Costo stimato - (Scoperto % o Minimo) - Franchigia.
-4. Sii chiaro e sintetico nel "dettaglio" (max 2 righe per prestazione). Non sommare cose diverse.
+REGOLE:
+1. Se l'utente chiede PIÙ COSE, separale in schede distinte.
+2. Se è esclusa (es. medicina estetica), scrivi "coperta": false e "a_carico_utente": "Tutto".
+3. Se è coperta, stima un costo medio per la città e calcola: Costo - (Scoperto o Minimo) - Franchigia.
+4. NON sommare cose diverse. Sii sintetico.
 
-Rispondi SOLO con questo JSON:
+Rispondi SOLO con questo JSON (senza markdown, senza ```):
 {
   "prestazioni": [
     {
-      "nome": "string (es. 'Visita dermatologica' o 'Medicina estetica')",
+      "nome": "string",
       "coperta": true | false,
-      "a_carico_utente": "string (es. '94 €')",
-      "a_carico_assicurazione": "string (es. '56 €')",
-      "dettaglio": "string (es. 'Costo 150€. Scoperto 20% (30€) + Franchigia 25€ = 55€. Rimborso 95€.')"
+      "a_carico_utente": "string",
+      "a_carico_assicurazione": "string",
+      "dettaglio": "string"
     }
   ]
 }`;
@@ -79,15 +64,16 @@ Rispondi SOLO con questo JSON:
     if (!response.ok) {
       const err = await response.text();
       console.error('Gemini error:', err);
-      return res.status(500).json({ error: 'Errore nella chiamata AI' });
+      return res.status(500).json({ error: 'Errore AI' });
     }
 
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    // Pulizia di sicurezza: rimuove eventuali ```json all'inizio o alla fine
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
-    if (!text) {
-      return res.status(500).json({ error: 'Risposta AI vuota' });
-    }
+    if (!text) return res.status(500).json({ error: 'Risposta vuota' });
 
     const risultato = JSON.parse(text);
     res.status(200).json(risultato);
