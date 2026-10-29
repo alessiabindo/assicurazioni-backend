@@ -39,33 +39,32 @@ export default async function handler(req, res) {
     })
     .join('\n\n');
 
-  const prompt = `Sei un calcolatore automatico di rimborsi assicurativi. Il tuo compito è calcolare in modo MATEMATICO quanto paga l'utente e quanto paga l'assicurazione.
+  const prompt = `Sei un calcolatore automatico. Devi calcolare quanto paga l'utente e quanto l'assicurazione.
 
 DATI:
-- Città dell'utente: ${profilo.citta}
+- Città: ${profilo.citta}
 - Polizze: ${polizzeText}
-- Visita richiesta: ${visita}
+- Visita: ${visita}
 
-REGOLE FONDAMENTALI:
-1. Se nelle condizioni della polizza ci sono franchigie o percentuali, DEVI calcolarle.
-2. Se NON ci sono le condizioni (perché l'utente non ha caricato il PDF), NON fare risposte generiche. Devi invece SIMULARE un calcolo standard: assumi che in regime diretto l'utente paghi 0€ e l'assicurazione il costo stimato, e in regime rimborsale l'utente paghi il 50% del costo stimato e l'assicurazione l'altro 50%.
-3. **COSTO MEDIO DELLA PRESTAZIONE**: invece di usare un costo fisso di 100€, DEVI cercare il costo medio reale della visita richiesta nella città dell'utente. Se non riesci a trovare un dato preciso, usa una stima plausibile basata sui prezzi tipici italiani (es. visita cardiologica 80-120€, dermatologica 100-150€, oculistica 80-120€). Nel dettaglio, scrivi: "Costo medio stimato per [visita] a [città]: [importo]€".
-4. Il campo "a_carico_utente" deve contenere SOLO un numero e il simbolo dell'euro (es. "0 €" o "60 €").
-5. Il campo "a_carico_assicurazione" deve contenere SOLO un numero e il simbolo dell'euro (es. "100 €" o "40 €").
-6. Nel campo "dettaglio", scrivi la matematica passo-passo (es. "Costo stimato 90€ - 20€ di scoperto = 70€ rimborsati").
+REGOLE TASSATIVE:
+1. Stima il costo medio della visita per la città. Scrivilo solo nel dettaglio.
+2. Fai UN SOLO calcolo matematico lineare. Se c'è una franchigia e uno scoperto, applica prima lo scoperto e poi sottrai la franchigia.
+3. NON scrivere ragionamenti, dubbi o frasi come "no aspetta", "forse", "dipende". Sii sintetico e assertivo.
+4. Se non ci sono le condizioni (PDF non caricato), simula: 0€ a carico utente in regime diretto, 50€ in regime rimborsale.
+5. Il campo "dettaglio" deve essere lungo MASSIMO 2 righe. Esempio: "Costo stimato 140€. Scoperto 20% (28€) + Franchigia 25€ = 53€ a tuo carico. Rimborso: 87€."
 
-Rispondi SOLO con questo JSON, senza testo attorno:
+Rispondi SOLO con questo JSON:
 {
   "visita": "string",
   "polizze": [
     {
       "nome": "string",
       "coperta": true,
-      "motivazione": "string",
+      "motivazione": "string (max 10 parole)",
       "calcolo": {
-        "a_carico_utente": "string (solo numero, es. '60 €')",
-        "a_carico_assicurazione": "string (solo numero, es. '40 €')",
-        "dettaglio": "string (spiegazione matematica con costo stimato)"
+        "a_carico_utente": "string (es. '53 €')",
+        "a_carico_assicurazione": "string (es. '87 €')",
+        "dettaglio": "string (max 2 righe, solo matematica)"
       },
       "centri": [{ "nome": "string", "indirizzo": "string", "telefono": "string|null" }],
       "come_prenotare": ["string"],
@@ -78,14 +77,14 @@ Rispondi SOLO con questo JSON, senza testo attorno:
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: 0.1,
+            temperature: 0.1, // Temperatura bassissima = niente creatività, solo matematica
             responseMimeType: 'application/json',
             maxOutputTokens: 4000
           }
